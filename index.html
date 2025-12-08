@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>洗澡時間預約系統</title>
+    <title>洗澡時間預約系統 (連線版)</title>
     <style>
         body { font-family: "Microsoft JhengHei", Arial, sans-serif; background-color: #eef2f3; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .container { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 380px; text-align: center; }
@@ -13,15 +13,14 @@
         button { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.3s; }
         button:hover { background-color: #0056b3; }
         button.secondary { background-color: #6c757d; }
-        button.secondary:hover { background-color: #5a6268; }
+        button.delete-btn { background-color: #dc3545; width: auto; padding: 5px 10px; font-size: 0.8rem; margin-left: 10px; }
         .hidden { display: none; }
         
-        /* 預約列表樣式 */
         #bookingList { text-align: left; margin-top: 20px; border-top: 2px dashed #eee; padding-top: 15px; max-height: 300px; overflow-y: auto; }
-        .booking-item { background: #f8f9fa; padding: 12px; margin-bottom: 8px; border-left: 5px solid #28a745; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .booking-item { background: #f8f9fa; padding: 12px; margin-bottom: 8px; border-left: 5px solid #28a745; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .booking-info { flex-grow: 1; }
         .booking-time { font-weight: bold; color: #333; }
         .booking-user { font-size: 0.9em; color: #666; }
-        
         .time-group { display: flex; gap: 10px; }
         .time-group div { flex: 1; text-align: left; }
         label { font-size: 0.9rem; color: #666; font-weight: bold; }
@@ -30,19 +29,16 @@
 <body>
 
     <div class="container">
-        <div class="clock" id="clock">載入時間中...</div>
+        <div class="clock" id="clock">連線中...</div>
 
         <div id="loginSection">
             <h2>🛁 搶水登入系統</h2>
-            <input type="text" id="username" placeholder="帳號 (隨意輸入)">
-            <input type="password" id="password" placeholder="密碼 (隨意輸入)">
             <input type="text" id="nickname" placeholder="你的綽號 (例: 洗澡超人)">
-            <button onclick="handleLogin()">登入預約</button>
+            <button id="loginBtn">登入預約</button>
         </div>
 
         <div id="bookingSection" class="hidden">
             <h2 id="welcomeMsg">你好</h2>
-            <p>請選擇你想洗澡的時段：</p>
             
             <div style="text-align: left;"><label>日期：</label></div>
             <input type="date" id="bathDate">
@@ -58,93 +54,142 @@
                 </div>
             </div>
 
-            <button onclick="addBooking()">搶下這個時段！</button>
+            <button id="addBtn">搶下這個時段！</button>
 
             <h3>📅 目前預約列表</h3>
-            <div id="bookingList">
-                <div style="color: #aaa; text-align: center; font-size: 0.9rem;">目前還沒有人預約</div>
-            </div>
+            <div id="bookingList">載入資料中...</div>
             
-            <button class="secondary" onclick="logout()">登出</button>
+            <button class="secondary" onclick="location.reload()">登出</button>
         </div>
     </div>
 
-    <script>
-        // 1. 自動更新台北時間
-        function updateTime() {
-            const now = new Date();
-            const options = { timeZone: "Asia/Taipei", hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' };
-            const timeString = new Intl.DateTimeFormat('zh-TW', options).format(now);
-            const dateString = new Intl.DateTimeFormat('zh-TW', { timeZone: "Asia/Taipei", month: 'long', day: 'numeric' }).format(now);
-            document.getElementById('clock').innerText = `台北時間\n${dateString} ${timeString}`;
-        }
-        setInterval(updateTime, 1000);
-        updateTime();
+    <script type="module">
+        // 匯入 Firebase 功能
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-        // 設定預設日期為今天
-        document.getElementById('bathDate').valueAsDate = new Date();
+        // 🔥🔥🔥 請將你的 firebaseConfig 貼在下方 (取代這裡) 🔥🔥🔥
+        const firebaseConfig = {
+            apiKey: "AIzaSyCtxKrvWRAiKw0-AblXW8QIm-Yf82MPZdA",
+            authDomain: "bath-time-7022b.firebaseapp.com",
+            databaseURL: "https://bath-time-7022b-default-rtdb.firebaseio.com",
+            projectId: "bath-time-7022b",
+            storageBucket: "bath-time-7022b.firebasestorage.app",
+            messagingSenderId: "495910108764",
+            appId: "1:495910108764:web:7fe2acb54604d11a1e7099"
+        };
+        // 🔥🔥🔥 設定結束 🔥🔥🔥
 
-        // 2. 登入邏輯
-        let currentUserNickname = "";
-        function handleLogin() {
+        // 初始化 Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // --- 以下是網頁邏輯 ---
+
+        // 1. 處理登入
+        let currentUser = "";
+        document.getElementById('loginBtn').addEventListener('click', () => {
             const nick = document.getElementById('nickname').value;
             if(nick) {
-                currentUserNickname = nick;
+                currentUser = nick;
                 document.getElementById('loginSection').classList.add('hidden');
                 document.getElementById('bookingSection').classList.remove('hidden');
                 document.getElementById('welcomeMsg').innerText = `哈囉，${nick}！`;
+                // 預設今天日期
+                document.getElementById('bathDate').valueAsDate = new Date();
             } else {
-                alert("請至少輸入一個綽號！");
+                alert("請輸入綽號！");
             }
-        }
+        });
 
-        // 3. 預約邏輯 (修正跨天問題版)
-        function addBooking() {
+        // 2. 監聽資料庫變動 (這就是同步的魔法！)
+        const bookingsRef = ref(db, 'bookings');
+        onValue(bookingsRef, (snapshot) => {
+            const list = document.getElementById('bookingList');
+            list.innerHTML = ""; // 清空列表重新繪製
+            const data = snapshot.val();
+
+            if (data) {
+                // 將資料轉換成陣列並排序 (簡單排序)
+                const bookings = Object.entries(data).map(([key, value]) => ({ id: key, ...value }));
+                
+                bookings.forEach(booking => {
+                    const newItem = document.createElement('div');
+                    newItem.className = 'booking-item';
+                    
+                    // 跨天判斷顯示
+                    let displayEnd = booking.endTime;
+                    let tag = "";
+                    if (booking.startTime > booking.endTime) {
+                        displayEnd += " <span style='color:red'>(隔日)</span>";
+                        tag = " (跨夜)";
+                    }
+
+                    // 刪除按鈕 (每個人都可以刪除，為了方便)
+                    const deleteBtn = `<button class="delete-btn" data-id="${booking.id}">刪除</button>`;
+
+                    newItem.innerHTML = `
+                        <div class="booking-info">
+                            <div class="booking-time">${booking.date} | ${booking.startTime} ~ ${displayEnd}</div>
+                            <div class="booking-user">${booking.user} ${tag}</div>
+                        </div>
+                        ${deleteBtn}
+                    `;
+                    list.appendChild(newItem);
+                });
+
+                // 綁定刪除按鈕事件
+                document.querySelectorAll('.delete-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const id = e.target.getAttribute('data-id');
+                        if(confirm("確定要刪除這個預約嗎？")) {
+                            remove(ref(db, 'bookings/' + id));
+                        }
+                    });
+                });
+            } else {
+                list.innerHTML = "<div style='color:#999; text-align:center'>目前沒有預約</div>";
+            }
+        });
+
+        // 3. 新增預約 (寫入資料庫)
+        document.getElementById('addBtn').addEventListener('click', () => {
             const date = document.getElementById('bathDate').value;
             const start = document.getElementById('startTime').value;
             const end = document.getElementById('endTime').value;
 
-            // 檢查是否填寫完整
             if(!date || !start || !end) {
-                alert("請完整填寫 日期、開始時間 與 結束時間");
+                alert("請填寫完整資訊");
                 return;
             }
 
-            // 判斷是否跨天
-            // 邏輯：如果結束時間(00:10) 小於 開始時間(23:55)，就代表跨天了
-            let displayEnd = end;
-            let timeTag = ""; // 用來標記特殊狀況
-            
-            if(start > end) {
-                displayEnd = end + " <span style='color:red; font-size:0.8em;'>(隔日)</span>";
-                timeTag = " (跨夜)";
-            } else if (start == end) {
-                alert("洗澡時間不能是 0 分鐘喔！");
+            if(start == end) {
+                alert("洗澡時間不能是 0 分鐘！");
                 return;
             }
 
-            const list = document.getElementById('bookingList');
-            
-            // 清除「目前沒有人預約」的提示字
-            if(list.children[0] && list.children[0].innerText.includes("目前還沒有人預約")) {
-                list.innerHTML = "";
-            }
+            // 直接推送到 Firebase，不用自己 appendChild，上面的 onValue 會自動更新畫面
+            push(bookingsRef, {
+                date: date,
+                startTime: start,
+                endTime: end,
+                user: currentUser,
+                timestamp: Date.now()
+            }).then(() => {
+                alert("預約成功！同步中...");
+            }).catch((error) => {
+                alert("預約失敗：" + error.message);
+            });
+        });
 
-            const newItem = document.createElement('div');
-            newItem.className = 'booking-item';
-            // 讓跨夜的預約顯示稍微不同（加個紅字標記）
-            newItem.innerHTML = `
-                <div class="booking-time">${date} | ${start} ~ ${displayEnd}</div>
-                <div class="booking-user">預約者：${currentUserNickname}${timeTag}</div>
-            `;
-            
-            list.appendChild(newItem);
-            alert("預約成功！");
+        // 4. 時間顯示
+        function updateTime() {
+            const now = new Date();
+            const options = { timeZone: "Asia/Taipei", hour12: false, hour: '2-digit', minute: '2-digit' };
+            document.getElementById('clock').innerText = "台北時間 " + now.toLocaleTimeString('zh-TW', options);
         }
-
-        function logout() {
-            location.reload(); // 直接重新整理頁面來登出
-        }
+        setInterval(updateTime, 1000);
+        updateTime();
     </script>
 </body>
 </html>
