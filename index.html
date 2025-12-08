@@ -98,7 +98,7 @@
             }
         }
 
-        // 3. 預約邏輯 (新增時段檢查)
+        // 3. 預約邏輯 (修正跨天問題版)
         function addBooking() {
             const date = document.getElementById('bathDate').value;
             const start = document.getElementById('startTime').value;
@@ -110,9 +110,16 @@
                 return;
             }
 
-            // 檢查結束時間是否晚於開始時間
-            if(start >= end) {
-                alert("⚠️ 結束時間必須晚於開始時間！\n(你總不能洗時光倒流澡吧？)");
+            // 判斷是否跨天
+            // 邏輯：如果結束時間(00:10) 小於 開始時間(23:55)，就代表跨天了
+            let displayEnd = end;
+            let timeTag = ""; // 用來標記特殊狀況
+            
+            if(start > end) {
+                displayEnd = end + " <span style='color:red; font-size:0.8em;'>(隔日)</span>";
+                timeTag = " (跨夜)";
+            } else if (start == end) {
+                alert("洗澡時間不能是 0 分鐘喔！");
                 return;
             }
 
@@ -125,9 +132,10 @@
 
             const newItem = document.createElement('div');
             newItem.className = 'booking-item';
+            // 讓跨夜的預約顯示稍微不同（加個紅字標記）
             newItem.innerHTML = `
-                <div class="booking-time">${date} | ${start} ~ ${end}</div>
-                <div class="booking-user">預約者：${currentUserNickname}</div>
+                <div class="booking-time">${date} | ${start} ~ ${displayEnd}</div>
+                <div class="booking-user">預約者：${currentUserNickname}${timeTag}</div>
             `;
             
             list.appendChild(newItem);
