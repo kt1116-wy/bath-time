@@ -5,16 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>洗澡時間預約系統</title>
     <style>
-        body { font-family: "Microsoft JhengHei", Arial, sans-serif; background-color: #f0f8ff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 350px; text-align: center; }
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; background-color: #eef2f3; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 380px; text-align: center; }
         h1 { color: #007bff; }
-        .clock { font-size: 1.2rem; color: #555; margin-bottom: 20px; font-weight: bold; }
-        input, select, button { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; border: none; cursor: pointer; font-size: 1rem; }
+        .clock { font-size: 1.2rem; color: #444; margin-bottom: 20px; font-weight: bold; background: #e9ecef; padding: 10px; border-radius: 8px; }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box; font-size: 1rem; }
+        button { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.3s; }
         button:hover { background-color: #0056b3; }
+        button.secondary { background-color: #6c757d; }
+        button.secondary:hover { background-color: #5a6268; }
         .hidden { display: none; }
-        #bookingList { text-align: left; margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }
-        .booking-item { background: #e9ecef; padding: 8px; margin-bottom: 5px; border-radius: 4px; font-size: 0.9rem; }
+        
+        /* 預約列表樣式 */
+        #bookingList { text-align: left; margin-top: 20px; border-top: 2px dashed #eee; padding-top: 15px; max-height: 300px; overflow-y: auto; }
+        .booking-item { background: #f8f9fa; padding: 12px; margin-bottom: 8px; border-left: 5px solid #28a745; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .booking-time { font-weight: bold; color: #333; }
+        .booking-user { font-size: 0.9em; color: #666; }
+        
+        .time-group { display: flex; gap: 10px; }
+        .time-group div { flex: 1; text-align: left; }
+        label { font-size: 0.9rem; color: #666; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -23,30 +33,39 @@
         <div class="clock" id="clock">載入時間中...</div>
 
         <div id="loginSection">
-            <h2>🏠 王子/公主請登入</h2>
-            <input type="text" id="username" placeholder="設定帳號 (例: user1)">
-            <input type="password" id="password" placeholder="設定密碼">
-            <input type="text" id="nickname" placeholder="你想顯示的綽號 (例: 洗澡超人)">
-            <button onclick="handleLogin()">進入系統</button>
+            <h2>🛁 搶水登入系統</h2>
+            <input type="text" id="username" placeholder="帳號 (隨意輸入)">
+            <input type="password" id="password" placeholder="密碼 (隨意輸入)">
+            <input type="text" id="nickname" placeholder="你的綽號 (例: 洗澡超人)">
+            <button onclick="handleLogin()">登入預約</button>
         </div>
 
         <div id="bookingSection" class="hidden">
             <h2 id="welcomeMsg">你好</h2>
-            <p>請選擇洗澡時段</p>
+            <p>請選擇你想洗澡的時段：</p>
             
-            <label for="date">日期：</label>
+            <div style="text-align: left;"><label>日期：</label></div>
             <input type="date" id="bathDate">
             
-            <label for="time">時間：</label>
-            <input type="time" id="bathTime">
+            <div class="time-group">
+                <div>
+                    <label>開始時間：</label>
+                    <input type="time" id="startTime">
+                </div>
+                <div>
+                    <label>結束時間：</label>
+                    <input type="time" id="endTime">
+                </div>
+            </div>
 
             <button onclick="addBooking()">搶下這個時段！</button>
 
             <h3>📅 目前預約列表</h3>
             <div id="bookingList">
-                </div>
+                <div style="color: #aaa; text-align: center; font-size: 0.9rem;">目前還沒有人預約</div>
+            </div>
             
-            <button onclick="logout()" style="background-color: #6c757d; margin-top: 20px;">登出</button>
+            <button class="secondary" onclick="logout()">登出</button>
         </div>
     </div>
 
@@ -54,66 +73,69 @@
         // 1. 自動更新台北時間
         function updateTime() {
             const now = new Date();
-            // 強制使用台北時區格式
-            const options = { 
-                timeZone: "Asia/Taipei", 
-                year: 'numeric', month: '2-digit', day: '2-digit', 
-                hour: '2-digit', minute: '2-digit', second: '2-digit',
-                hour12: false 
-            };
+            const options = { timeZone: "Asia/Taipei", hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' };
             const timeString = new Intl.DateTimeFormat('zh-TW', options).format(now);
-            document.getElementById('clock').innerText = "台北時間: " + timeString;
+            const dateString = new Intl.DateTimeFormat('zh-TW', { timeZone: "Asia/Taipei", month: 'long', day: 'numeric' }).format(now);
+            document.getElementById('clock').innerText = `台北時間\n${dateString} ${timeString}`;
         }
-        setInterval(updateTime, 1000); // 每秒更新一次
+        setInterval(updateTime, 1000);
         updateTime();
 
         // 設定預設日期為今天
         document.getElementById('bathDate').valueAsDate = new Date();
 
-        // 2. 登入邏輯 (目前是模擬)
+        // 2. 登入邏輯
         let currentUserNickname = "";
-
         function handleLogin() {
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
             const nick = document.getElementById('nickname').value;
-
-            if(user && pass && nick) {
-                // 這裡未來可以加上檢查密碼的程式
+            if(nick) {
                 currentUserNickname = nick;
                 document.getElementById('loginSection').classList.add('hidden');
                 document.getElementById('bookingSection').classList.remove('hidden');
-                document.getElementById('welcomeMsg').innerText = "哈囉，" + nick;
+                document.getElementById('welcomeMsg').innerText = `哈囉，${nick}！`;
             } else {
-                alert("請填寫所有欄位！");
+                alert("請至少輸入一個綽號！");
             }
         }
 
-        // 3. 預約邏輯
+        // 3. 預約邏輯 (新增時段檢查)
         function addBooking() {
             const date = document.getElementById('bathDate').value;
-            const time = document.getElementById('bathTime').value;
+            const start = document.getElementById('startTime').value;
+            const end = document.getElementById('endTime').value;
 
-            if(!date || !time) {
-                alert("請選擇完整的日期與時間");
+            // 檢查是否填寫完整
+            if(!date || !start || !end) {
+                alert("請完整填寫 日期、開始時間 與 結束時間");
+                return;
+            }
+
+            // 檢查結束時間是否晚於開始時間
+            if(start >= end) {
+                alert("⚠️ 結束時間必須晚於開始時間！\n(你總不能洗時光倒流澡吧？)");
                 return;
             }
 
             const list = document.getElementById('bookingList');
+            
+            // 清除「目前沒有人預約」的提示字
+            if(list.children[0] && list.children[0].innerText.includes("目前還沒有人預約")) {
+                list.innerHTML = "";
+            }
+
             const newItem = document.createElement('div');
             newItem.className = 'booking-item';
-            newItem.innerText = `${date} ${time} - ${currentUserNickname} 預約了`;
+            newItem.innerHTML = `
+                <div class="booking-time">${date} | ${start} ~ ${end}</div>
+                <div class="booking-user">預約者：${currentUserNickname}</div>
+            `;
             
             list.appendChild(newItem);
-            alert("預約成功！(注意：重新整理網頁後資料會重置)");
+            alert("預約成功！");
         }
 
         function logout() {
-            document.getElementById('bookingSection').classList.add('hidden');
-            document.getElementById('loginSection').classList.remove('hidden');
-            document.getElementById('username').value = '';
-            document.getElementById('password').value = '';
-            document.getElementById('nickname').value = '';
+            location.reload(); // 直接重新整理頁面來登出
         }
     </script>
 </body>
