@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>洗澡時間預約系統 (連線版)</title>
+    <title>洗澡預約系統 (分房+自動刪除版)</title>
     <style>
         body { font-family: "Microsoft JhengHei", Arial, sans-serif; background-color: #eef2f3; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .container { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 380px; text-align: center; }
@@ -21,6 +21,8 @@
         .booking-info { flex-grow: 1; }
         .booking-time { font-weight: bold; color: #333; }
         .booking-user { font-size: 0.9em; color: #666; }
+        .expired { opacity: 0.5; text-decoration: line-through; } /* 過期樣式(備用) */
+
         .time-group { display: flex; gap: 10px; }
         .time-group div { flex: 1; text-align: left; }
         label { font-size: 0.9rem; color: #666; font-weight: bold; }
@@ -33,6 +35,7 @@
 
         <div id="loginSection">
             <h2>🛁 搶水登入系統</h2>
+            <input type="text" id="roomId" placeholder="請輸入房號/群組 (例: 301)">
             <input type="text" id="nickname" placeholder="你的綽號 (例: 洗澡超人)">
             <button id="loginBtn">登入預約</button>
         </div>
@@ -56,20 +59,20 @@
 
             <button id="addBtn">搶下這個時段！</button>
 
-            <h3>📅 目前預約列表</h3>
+            <h3>📅 目前預約列表 <span id="roomDisplay" style="font-size:0.6em; color:#888;"></span></h3>
             <div id="bookingList">載入資料中...</div>
             
-            <button class="secondary" onclick="location.reload()">登出</button>
+            <button class="secondary" onclick="location.reload()">登出 / 切換房號</button>
         </div>
     </div>
 
     <script type="module">
-        // 匯入 Firebase 功能
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
         // 🔥🔥🔥 請將你的 firebaseConfig 貼在下方 (取代這裡) 🔥🔥🔥
         const firebaseConfig = {
+           // 這裡貼上你剛剛存的那一長串 config
             apiKey: "AIzaSyCtxKrvWRAiKw0-AblXW8QIm-Yf82MPZdA",
             authDomain: "bath-time-7022b.firebaseapp.com",
             databaseURL: "https://bath-time-7022b-default-rtdb.firebaseio.com",
@@ -80,109 +83,142 @@
         };
         // 🔥🔥🔥 設定結束 🔥🔥🔥
 
-        // 初始化 Firebase
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- 以下是網頁邏輯 ---
-
-        // 1. 處理登入
+        // 全域變數
         let currentUser = "";
+        let currentRoomId = ""; 
+
+        // 1. 處理登入 (包含設定房號)
         document.getElementById('loginBtn').addEventListener('click', () => {
-            const nick = document.getElementById('nickname').value;
-            if(nick) {
+            const nick = document.getElementById('nickname').value.trim();
+            const room = document.getElementById('roomId').value.trim();
+
+            if(nick && room) {
                 currentUser = nick;
+                currentRoomId = room; // 記住房號
+
+                // 切換畫面
                 document.getElementById('loginSection').classList.add('hidden');
                 document.getElementById('bookingSection').classList.remove('hidden');
-                document.getElementById('welcomeMsg').innerText = `哈囉，${nick}！`;
-                // 預設今天日期
+                document.getElementById('welcomeMsg').innerText = `哈囉，${nick}`;
+                document.getElementById('roomDisplay').innerText = `(房號: ${room})`;
                 document.getElementById('bathDate').valueAsDate = new Date();
+
+                // 啟動監聽 (只監聽該房號的資料)
+                startListening(currentRoomId);
             } else {
-                alert("請輸入綽號！");
+                alert("請輸入完整的 房號 和 綽號！");
             }
         });
 
-        // 2. 監聽資料庫變動 (這就是同步的魔法！)
-        const bookingsRef = ref(db, 'bookings');
-        onValue(bookingsRef, (snapshot) => {
-            const list = document.getElementById('bookingList');
-            list.innerHTML = ""; // 清空列表重新繪製
-            const data = snapshot.val();
+        // 2. 監聽與自動刪除邏輯
+        function startListening(roomId) {
+            const bookingsRef = ref(db, 'bookings/' + roomId);
+            
+            onValue(bookingsRef, (snapshot) => {
+                const list = document.getElementById('bookingList');
+                list.innerHTML = "";
+                const data = snapshot.val();
 
-            if (data) {
-                // 將資料轉換成陣列並排序 (簡單排序)
-                const bookings = Object.entries(data).map(([key, value]) => ({ id: key, ...value }));
-                
-                bookings.forEach(booking => {
-                    const newItem = document.createElement('div');
-                    newItem.className = 'booking-item';
+                if (data) {
+                    const bookings = Object.entries(data).map(([key, value]) => ({ id: key, ...value }));
                     
-                    // 跨天判斷顯示
-                    let displayEnd = booking.endTime;
-                    let tag = "";
-                    if (booking.startTime > booking.endTime) {
-                        displayEnd += " <span style='color:red'>(隔日)</span>";
-                        tag = " (跨夜)";
-                    }
+                    // 排序：日期優先，再來是開始時間
+                    bookings.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
 
-                    // 刪除按鈕 (每個人都可以刪除，為了方便)
-                    const deleteBtn = `<button class="delete-btn" data-id="${booking.id}">刪除</button>`;
-
-                    newItem.innerHTML = `
-                        <div class="booking-info">
-                            <div class="booking-time">${booking.date} | ${booking.startTime} ~ ${displayEnd}</div>
-                            <div class="booking-user">${booking.user} ${tag}</div>
-                        </div>
-                        ${deleteBtn}
-                    `;
-                    list.appendChild(newItem);
-                });
-
-                // 綁定刪除按鈕事件
-                document.querySelectorAll('.delete-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const id = e.target.getAttribute('data-id');
-                        if(confirm("確定要刪除這個預約嗎？")) {
-                            remove(ref(db, 'bookings/' + id));
+                    bookings.forEach(booking => {
+                        // --- 自動刪除檢查 ---
+                        if (checkIfExpired(booking, roomId)) {
+                            return; // 如果過期被刪除，就不顯示在列表上
                         }
-                    });
-                });
-            } else {
-                list.innerHTML = "<div style='color:#999; text-align:center'>目前沒有預約</div>";
-            }
-        });
+                        // -------------------
 
-        // 3. 新增預約 (寫入資料庫)
+                        const newItem = document.createElement('div');
+                        newItem.className = 'booking-item';
+                        
+                        // 跨天顯示邏輯
+                        let displayEnd = booking.endTime;
+                        let tag = "";
+                        if (booking.startTime > booking.endTime) {
+                            displayEnd += " <span style='color:red'>(隔日)</span>";
+                            tag = " (跨夜)";
+                        }
+
+                        // 刪除按鈕
+                        const deleteBtn = `<button class="delete-btn" data-id="${booking.id}">刪除</button>`;
+
+                        newItem.innerHTML = `
+                            <div class="booking-info">
+                                <div class="booking-time">${booking.date} | ${booking.startTime} ~ ${displayEnd}</div>
+                                <div class="booking-user">${booking.user} ${tag}</div>
+                            </div>
+                            ${deleteBtn}
+                        `;
+                        list.appendChild(newItem);
+                    });
+
+                    // 綁定手動刪除按鈕
+                    document.querySelectorAll('.delete-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            const id = e.target.getAttribute('data-id');
+                            if(confirm("確定要手動取消這個預約嗎？")) {
+                                remove(ref(db, `bookings/${roomId}/${id}`));
+                            }
+                        });
+                    });
+                } else {
+                    list.innerHTML = "<div style='color:#999; text-align:center'>目前沒有預約</div>";
+                }
+            });
+        }
+
+        // 3. 檢查過期函式 (核心邏輯)
+        function checkIfExpired(booking, roomId) {
+            const now = new Date();
+            // 建立預約的結束時間物件
+            const endDateStr = booking.date + 'T' + booking.endTime;
+            let endDate = new Date(endDateStr);
+
+            // 處理跨夜：如果開始時間 > 結束時間 (例如 23:00 ~ 00:30)，結束時間其實是「日期+1天」
+            if (booking.startTime > booking.endTime) {
+                endDate.setDate(endDate.getDate() + 1);
+            }
+
+            // 如果現在時間 > 結束時間，代表洗完了 -> 刪除
+            if (now > endDate) {
+                console.log(`預約已過期，自動刪除: ${booking.user}`);
+                remove(ref(db, `bookings/${roomId}/${booking.id}`));
+                return true; // 回傳 true 代表已刪除
+            }
+            return false;
+        }
+
+        // 4. 新增預約 (寫入指定房號)
         document.getElementById('addBtn').addEventListener('click', () => {
             const date = document.getElementById('bathDate').value;
             const start = document.getElementById('startTime').value;
             const end = document.getElementById('endTime').value;
 
-            if(!date || !start || !end) {
-                alert("請填寫完整資訊");
-                return;
-            }
+            if(!date || !start || !end) { alert("請填寫完整資訊"); return; }
+            if(start == end) { alert("時間不能相同！"); return; }
 
-            if(start == end) {
-                alert("洗澡時間不能是 0 分鐘！");
-                return;
-            }
-
-            // 直接推送到 Firebase，不用自己 appendChild，上面的 onValue 會自動更新畫面
+            // 推送到 bookings/房號
+            const bookingsRef = ref(db, 'bookings/' + currentRoomId); 
             push(bookingsRef, {
                 date: date,
                 startTime: start,
                 endTime: end,
-                user: currentUser,
-                timestamp: Date.now()
+                user: currentUser
             }).then(() => {
-                alert("預約成功！同步中...");
-            }).catch((error) => {
-                alert("預約失敗：" + error.message);
+                alert("預約成功！");
+            }).catch((err) => {
+                alert("錯誤：" + err.message);
             });
         });
 
-        // 4. 時間顯示
+        // 5. 時鐘
         function updateTime() {
             const now = new Date();
             const options = { timeZone: "Asia/Taipei", hour12: false, hour: '2-digit', minute: '2-digit' };
