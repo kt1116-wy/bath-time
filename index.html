@@ -3,12 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>洗澡預約系統 (分房+自動刪除版)</title>
+    <title>洗澡預約系統</title>
     <style>
-        body { font-family: "Microsoft JhengHei", Arial, sans-serif; background-color: #eef2f3; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .container { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 380px; text-align: center; }
-        h1 { color: #007bff; }
-        .clock { font-size: 1.2rem; color: #444; margin-bottom: 20px; font-weight: bold; background: #e9ecef; padding: 10px; border-radius: 8px; }
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; background-color: #eef2f3; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .container { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        
+        /* --- 新增圖片的樣式 --- */
+        .header-img {
+            width: 100%; /* 讓圖片寬度跟容器一樣 */
+            max-width: 250px; /* 最大寬度限制，避免太大 */
+            height: auto; /* 高度自動調整，保持比例 */
+            border-radius: 10px; /* 圓角 */
+            margin-bottom: 20px; /* 圖片下面留點空白 */
+        }
+        /* ----------------------- */
+
+        h1 { color: #007bff; margin: 0 0 20px 0; }
+        .clock { font-size: 1.1rem; color: #444; margin-bottom: 20px; font-weight: bold; background: #e9ecef; padding: 10px; border-radius: 8px; }
         input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box; font-size: 1rem; }
         button { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.3s; }
         button:hover { background-color: #0056b3; }
@@ -21,7 +32,6 @@
         .booking-info { flex-grow: 1; }
         .booking-time { font-weight: bold; color: #333; }
         .booking-user { font-size: 0.9em; color: #666; }
-        .expired { opacity: 0.5; text-decoration: line-through; } /* 過期樣式(備用) */
 
         .time-group { display: flex; gap: 10px; }
         .time-group div { flex: 1; text-align: left; }
@@ -31,6 +41,8 @@
 <body>
 
     <div class="container">
+        <img src="header.png" alt="管好你的嘴" class="header-img">
+        
         <div class="clock" id="clock">連線中...</div>
 
         <div id="loginSection">
@@ -73,82 +85,62 @@
         // 🔥🔥🔥 請將你的 firebaseConfig 貼在下方 (取代這裡) 🔥🔥🔥
         const firebaseConfig = {
            // 這裡貼上你剛剛存的那一長串 config
-            apiKey: "AIzaSyCtxKrvWRAiKw0-AblXW8QIm-Yf82MPZdA",
-            authDomain: "bath-time-7022b.firebaseapp.com",
-            databaseURL: "https://bath-time-7022b-default-rtdb.firebaseio.com",
-            projectId: "bath-time-7022b",
-            storageBucket: "bath-time-7022b.firebasestorage.app",
-            messagingSenderId: "495910108764",
-            appId: "1:495910108764:web:7fe2acb54604d11a1e7099"
+              apiKey: "AIzaSyCtxKrvWRAiKw0-AblXW8QIm-Yf82MPZdA",
+              authDomain: "bath-time-7022b.firebaseapp.com",
+              databaseURL: "https://bath-time-7022b-default-rtdb.firebaseio.com",
+              projectId: "bath-time-7022b",
+              storageBucket: "bath-time-7022b.firebasestorage.app",
+              messagingSenderId: "495910108764",
+              appId: "1:495910108764:web:7fe2acb54604d11a1e7099"
         };
         // 🔥🔥🔥 設定結束 🔥🔥🔥
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // 全域變數
         let currentUser = "";
         let currentRoomId = ""; 
 
-        // 1. 處理登入 (包含設定房號)
+        // 1. 處理登入
         document.getElementById('loginBtn').addEventListener('click', () => {
             const nick = document.getElementById('nickname').value.trim();
             const room = document.getElementById('roomId').value.trim();
 
             if(nick && room) {
                 currentUser = nick;
-                currentRoomId = room; // 記住房號
-
-                // 切換畫面
+                currentRoomId = room;
                 document.getElementById('loginSection').classList.add('hidden');
                 document.getElementById('bookingSection').classList.remove('hidden');
                 document.getElementById('welcomeMsg').innerText = `哈囉，${nick}`;
                 document.getElementById('roomDisplay').innerText = `(房號: ${room})`;
                 document.getElementById('bathDate').valueAsDate = new Date();
-
-                // 啟動監聽 (只監聽該房號的資料)
                 startListening(currentRoomId);
             } else {
                 alert("請輸入完整的 房號 和 綽號！");
             }
         });
 
-        // 2. 監聽與自動刪除邏輯
+        // 2. 監聽與自動刪除
         function startListening(roomId) {
             const bookingsRef = ref(db, 'bookings/' + roomId);
-            
             onValue(bookingsRef, (snapshot) => {
                 const list = document.getElementById('bookingList');
                 list.innerHTML = "";
                 const data = snapshot.val();
-
                 if (data) {
                     const bookings = Object.entries(data).map(([key, value]) => ({ id: key, ...value }));
-                    
-                    // 排序：日期優先，再來是開始時間
                     bookings.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
-
                     bookings.forEach(booking => {
-                        // --- 自動刪除檢查 ---
-                        if (checkIfExpired(booking, roomId)) {
-                            return; // 如果過期被刪除，就不顯示在列表上
-                        }
-                        // -------------------
-
+                        if (checkIfExpired(booking, roomId)) return;
                         const newItem = document.createElement('div');
                         newItem.className = 'booking-item';
-                        
-                        // 跨天顯示邏輯
                         let displayEnd = booking.endTime;
                         let tag = "";
                         if (booking.startTime > booking.endTime) {
                             displayEnd += " <span style='color:red'>(隔日)</span>";
                             tag = " (跨夜)";
                         }
-
-                        // 刪除按鈕
                         const deleteBtn = `<button class="delete-btn" data-id="${booking.id}">刪除</button>`;
-
                         newItem.innerHTML = `
                             <div class="booking-info">
                                 <div class="booking-time">${booking.date} | ${booking.startTime} ~ ${displayEnd}</div>
@@ -158,8 +150,6 @@
                         `;
                         list.appendChild(newItem);
                     });
-
-                    // 綁定手動刪除按鈕
                     document.querySelectorAll('.delete-btn').forEach(btn => {
                         btn.addEventListener('click', (e) => {
                             const id = e.target.getAttribute('data-id');
@@ -174,47 +164,32 @@
             });
         }
 
-        // 3. 檢查過期函式 (核心邏輯)
+        // 3. 檢查過期
         function checkIfExpired(booking, roomId) {
             const now = new Date();
-            // 建立預約的結束時間物件
             const endDateStr = booking.date + 'T' + booking.endTime;
             let endDate = new Date(endDateStr);
-
-            // 處理跨夜：如果開始時間 > 結束時間 (例如 23:00 ~ 00:30)，結束時間其實是「日期+1天」
             if (booking.startTime > booking.endTime) {
                 endDate.setDate(endDate.getDate() + 1);
             }
-
-            // 如果現在時間 > 結束時間，代表洗完了 -> 刪除
             if (now > endDate) {
                 console.log(`預約已過期，自動刪除: ${booking.user}`);
                 remove(ref(db, `bookings/${roomId}/${booking.id}`));
-                return true; // 回傳 true 代表已刪除
+                return true;
             }
             return false;
         }
 
-        // 4. 新增預約 (寫入指定房號)
+        // 4. 新增預約
         document.getElementById('addBtn').addEventListener('click', () => {
             const date = document.getElementById('bathDate').value;
             const start = document.getElementById('startTime').value;
             const end = document.getElementById('endTime').value;
-
             if(!date || !start || !end) { alert("請填寫完整資訊"); return; }
             if(start == end) { alert("時間不能相同！"); return; }
-
-            // 推送到 bookings/房號
             const bookingsRef = ref(db, 'bookings/' + currentRoomId); 
             push(bookingsRef, {
-                date: date,
-                startTime: start,
-                endTime: end,
-                user: currentUser
-            }).then(() => {
-                alert("預約成功！");
-            }).catch((err) => {
-                alert("錯誤：" + err.message);
+                date: date, startTime: start, endTime: end, user: currentUser
             });
         });
 
